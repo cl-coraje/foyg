@@ -186,9 +186,6 @@ class GoalPanel {
         const mainStyleUri = webview.asWebviewUri(vscode.Uri.file(
             path.join(mediaPath, 'main.css')
         ));
-        const codiconStyleUri = webview.asWebviewUri(vscode.Uri.file(
-            path.join(mediaPath, 'codicon.css')
-        ));
 
         return `<!DOCTYPE html>
             <html lang="zh-CN">
@@ -197,8 +194,12 @@ class GoalPanel {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>FOYG - Focus On Your Goal</title>
                 <link href="${mainStyleUri}" rel="stylesheet">
-                <link href="${codiconStyleUri}" rel="stylesheet">
                 <style>
+                    .codicon {
+                        font-family: codicon;
+                        font-size: 16px;
+                        font-style: normal;
+                    }
                     body {
                         padding: 20px;
                     }
@@ -391,7 +392,18 @@ function activate(context) {
         GoalPanel.getInstance(context).show();
     });
 
-    context.subscriptions.push(setGoalCommand);
+    let viewGoalCommand = vscode.commands.registerCommand('foyg.viewGoal', async () => {
+        const result = await checkTodayGoal();
+        if (result.exists) {
+            const panel = GoalPanel.getInstance(context);
+            panel.show(result.data);
+        } else {
+            vscode.window.showInformationMessage('今天还没有设置目标，请先设置目标。');
+            vscode.commands.executeCommand('foyg.setGoal');
+        }
+    });
+
+    context.subscriptions.push(setGoalCommand, viewGoalCommand);
 }
 
 function deactivate() {

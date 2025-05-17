@@ -1,8 +1,8 @@
 {
     "name": "foyg",
     "displayName": "FOYG",
-    "version": "0.0.1",
-    "publisher": "ieliac",
+    "version": "0.0.2",
+    "publisher": "cl-coraje",
     "description": "FOYG (Focus On Your Goal) - Help you stay focused on your current goal",
     "engines": {
         "vscode": "^1.80.0"
@@ -21,7 +21,7 @@
         "color": "#C80000",
         "theme": "dark"
     },
-    "icon": "media/icon.png",
+    "icon": "media/image/logo.png",
     "repository": {
         "type": "git",
         "url": "https://github.com/ieliac/foyg.git"
@@ -36,24 +36,6 @@
     ],
     "main": "./extension.js",
     "contributes": {
-        "viewsContainers": {
-            "activitybar": [
-                {
-                    "id": "foyg-sidebar",
-                    "title": "FOYG",
-                    "icon": "media/icon.svg"
-                }
-            ]
-        },
-        "views": {
-            "foyg-sidebar": [
-                {
-                    "type": "webview",
-                    "id": "foyg.goalView",
-                    "name": "Goal Setting"
-                }
-            ]
-        },
         "commands": [
             {
                 "command": "foyg.setGoal",
@@ -80,14 +62,13 @@
                 "foyg.apiKey": {
                     "type": "string",
                     "default": "",
-                    "description": "API Key for AI enhancement feature",
-                    "scope": "application"
+                    "description": "API Key for AI enhancement feature"
                 }
             }
         }
     },
     "scripts": {
-        "vscode:prepublish": "npm run compile",
+        "vscode:prepublish": "npm install",
         "compile": "echo 'No compilation needed'",
         "watch": "echo 'No watch needed'",
         "package": "vsce package",
