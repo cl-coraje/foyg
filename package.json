@@ -46,6 +46,25 @@
                 "title": "FOYG: View Current Goal"
             }
         ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "foyg-sidebar",
+                    "title": "FOYG",
+                    "icon": "media/image/logo.png"
+                }
+            ]
+        },
+        "views": {
+            "foyg-sidebar": [
+                {
+                    "id": "foyg-todo",
+                    "name": "Today's Goals",
+                    "type": "webview",
+                    "when": "foyg:showTodoList"
+                }
+            ]
+        },
         "configuration": {
             "title": "FOYG",
             "properties": {

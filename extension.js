@@ -86,7 +86,7 @@ class TodoGenerator {
 
         finalKRs.forEach((kr, index) => {
             const checkMark = kr.isCompleted ? 'x' : ' ';
-            content.push(`- [${checkMark}] KR${index + 1}: ${kr.content} (进度: ${kr.progress}%, 权重: ${kr.weight}%)`);
+            content.push(`- [${checkMark}] KR${index + 1}: ${kr.content} (权重: ${kr.weight}%)`);
         });
 
         return content.join('\n');
@@ -115,7 +115,19 @@ class GoalPanel {
         if (this._panel) {
             this._panel.reveal(vscode.ViewColumn.One);
             if (data) {
-                // 如果有新数据，发送到webview
+                // 如果有数据，重新计算权重
+                if (data.keyResults && data.keyResults.length > 0) {
+                    const totalWeight = data.keyResults.reduce((sum, kr) => sum + (kr.weight || 0), 0);
+                    if (totalWeight !== 100) {
+                        const averageWeight = Math.floor(100 / data.keyResults.length);
+                        const remainder = 100 - (averageWeight * (data.keyResults.length - 1));
+
+                        data.keyResults.forEach((kr, index) => {
+                            kr.weight = index === data.keyResults.length - 1 ? remainder : averageWeight;
+                        });
+                    }
+                }
+                // 发送到webview
                 this._panel.webview.postMessage({
                     type: 'init',
                     data: data
@@ -300,14 +312,23 @@ class GoalPanel {
             // 显示成功消息
             vscode.window.showInformationMessage('目标设置成功！正在打开待办事项列表...');
 
-            // 打开待办事项文件
-            const doc = await vscode.workspace.openTextDocument(todoFilePath);
-            await vscode.window.showTextDocument(doc);
-
             // 关闭面板
             if (this._panel) {
                 this._panel.dispose();
             }
+
+            // 显示 todolist 视图
+            await vscode.commands.executeCommand('setContext', 'foyg:showTodoList', true);
+            await vscode.commands.executeCommand('workbench.view.extension.foyg-sidebar');
+            
+            // 确保 todolist 视图被激活并更新
+            setTimeout(() => {
+                const provider = FoygSidebarProvider.getInstance();
+                if (provider) {
+                    provider._updateView();
+                }
+            }, 500);
+
         } catch (error) {
             vscode.window.showErrorMessage('保存目标时发生错误: ' + error.message);
         }
@@ -321,19 +342,23 @@ async function checkTodayGoal() {
             return { exists: false };
         }
 
-        const today = new Date().toISOString().split('T')[0];
-        const todoFilePath = path.join(
-            workspaceFolders[0].uri.fsPath,
-            'todos',
-            `${today}.md`
-        );
-
-        if (!fs.existsSync(todoFilePath)) {
+        const todosPath = path.join(workspaceFolders[0].uri.fsPath, 'todos');
+        if (!fs.existsSync(todosPath)) {
             return { exists: false };
         }
 
-        // 读取文件内容
-        const content = await fs.promises.readFile(todoFilePath, 'utf8');
+        // 获取todos目录下的所有文件
+        const files = fs.readdirSync(todosPath)
+            .filter(file => file.endsWith('.md'))
+            .sort((a, b) => b.localeCompare(a)); // 按日期降序排序
+
+        if (files.length === 0) {
+            return { exists: false };
+        }
+
+        // 读取最新的文件
+        const latestFile = path.join(todosPath, files[0]);
+        const content = await fs.promises.readFile(latestFile, 'utf8');
         const lines = content.split('\n');
         
         let objective = '';
@@ -346,17 +371,38 @@ async function checkTodayGoal() {
             } else if (line.startsWith('- [')) {
                 const isCompleted = line.includes('- [x]');
                 const content = line.replace(/- \[[x ]\] KR\d+: /, '').split(' (')[0].trim();
-                const match = line.match(/进度: (\d+)%, 权重: (\d+)%/);
-                const progress = match ? parseInt(match[1]) : 0;
-                const weight = match ? parseInt(match[2]) : 0;
+                const match = line.match(/权重: (\d+)%/);
+                const weight = match ? parseInt(match[1]) : 0;
                 
                 keyResults.push({
                     content,
-                    progress,
                     weight,
                     isCompleted
                 });
             }
+        }
+
+        // 重新计算权重
+        const totalWeight = keyResults.reduce((sum, kr) => sum + (kr.weight || 0), 0);
+        if (totalWeight !== 100 && keyResults.length > 0) {
+            const averageWeight = Math.floor(100 / keyResults.length);
+            const remainder = 100 - (averageWeight * (keyResults.length - 1));
+
+            keyResults.forEach((kr, index) => {
+                kr.weight = index === keyResults.length - 1 ? remainder : averageWeight;
+            });
+
+            // 更新文件内容
+            const updatedLines = lines.map(line => {
+                if (line.startsWith('- [')) {
+                    const index = parseInt(line.match(/KR(\d+):/)[1]) - 1;
+                    const checkMark = line.includes('- [x]') ? 'x' : ' ';
+                    return `- [${checkMark}] KR${index + 1}: ${keyResults[index].content} (权重: ${keyResults[index].weight}%)`;
+                }
+                return line;
+            });
+
+            await fs.promises.writeFile(latestFile, updatedLines.join('\n'), 'utf8');
         }
 
         return {
@@ -372,18 +418,362 @@ async function checkTodayGoal() {
     }
 }
 
+class FoygSidebarProvider {
+    static _instance = null;
+
+    constructor(context) {
+        this.context = context;
+        this._view = null;
+        this._creationTime = new Date().toISOString();
+    }
+
+    _getTodayFilePath() {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            return null;
+        }
+
+        const todosPath = path.join(workspaceFolders[0].uri.fsPath, 'todos');
+        if (!fs.existsSync(todosPath)) {
+            return null;
+        }
+
+        // 获取最新的文件
+        const files = fs.readdirSync(todosPath)
+            .filter(file => file.endsWith('.md'))
+            .sort((a, b) => b.localeCompare(a));
+
+        if (files.length === 0) {
+            return null;
+        }
+
+        return path.join(todosPath, files[0]);
+    }
+
+    resolveWebviewView(webviewView) {
+        this._view = webviewView;
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [
+                vscode.Uri.file(path.join(this.context.extensionPath, 'media')),
+                vscode.Uri.file(path.join(this.context.extensionPath, 'todos'))
+            ]
+        };
+
+        // 添加视图状态变化监听器
+        webviewView.onDidChangeVisibility(() => {
+            if (webviewView.visible) {
+                this._updateView();
+            }
+        });
+
+        // 注册消息处理器
+        this._messageHandler = webviewView.webview.onDidReceiveMessage(async message => {
+            switch (message.type) {
+                case 'updateKR':
+                    await this._updateKR(message.data);
+                    await this._updateView();
+                    break;
+                case 'addKR':
+                    await this._addKR(message.data);
+                    await this._updateView();
+                    break;
+                case 'deleteKR':
+                    await this._deleteKR(message.data);
+                    await this._updateView();
+                    break;
+                case 'reorderKR':
+                    await this._reorderKR(message.data);
+                    await this._updateView();
+                    break;
+                case 'refresh':
+                    await this._updateView();
+                    break;
+            }
+        });
+
+        // 初始化视图
+        this._updateView();
+    }
+
+    async _updateView() {
+        if (!this._view) {
+            return;
+        }
+
+        const todayFile = this._getTodayFilePath();
+        let todoData = { objective: '', keyResults: [] };
+
+        if (fs.existsSync(todayFile)) {
+            // 每次更新时重新读取文件内容
+            const content = fs.readFileSync(todayFile, 'utf8');
+            todoData = this._parseMdContent(content);
+        }
+
+        const htmlContent = await this._getWebviewContent(todoData);
+        this._view.webview.html = htmlContent;
+    }
+
+    _parseMdContent(content) {
+        const lines = content.split('\n');
+        let objective = '';
+        const keyResults = [];
+        
+        for (const line of lines) {
+            if (line.startsWith('## 主要目标:')) {
+                objective = line.replace('## 主要目标:', '').trim();
+            } else if (line.startsWith('- [')) {
+                const kr = this._parseKRLine(line);
+                if (kr) {
+                    keyResults.push(kr);
+                }
+            }
+        }
+
+        console.log('Parsed objective:', objective); // 调试日志
+        console.log('Parsed keyResults:', keyResults); // 调试日志
+
+        return { objective, keyResults };
+    }
+
+    _parseKRLine(line) {
+        // 更新正则表达式以匹配包含完成时间的格式
+        const match = line.match(/- \[([ x])\] KR(\d+): (.*?) \(权重: (\d+)%(?:, 完成时间: ([\d:]+))?\)/);
+        if (match) {
+            return {
+                completed: match[1] === 'x',
+                content: match[3],
+                weight: parseInt(match[4]),
+                completionTime: match[5] || null
+            };
+        }
+        return null;
+    }
+
+    async _updateKR(data) {
+        const todayFile = this._getTodayFilePath();
+        if (!fs.existsSync(todayFile)) {
+            return;
+        }
+
+        let content = fs.readFileSync(todayFile, 'utf8');
+        const lines = content.split('\n');
+        const updatedLines = lines.map(line => {
+            if (line.includes(`KR${data.index + 1}:`)) {
+                const checkMark = data.completed ? 'x' : ' ';
+                const completionTime = data.completed && data.completionTime ? `, 完成时间: ${data.completionTime}` : '';
+                return `- [${checkMark}] KR${data.index + 1}: ${data.content} (权重: ${data.weight}%${completionTime})`;
+            }
+            return line;
+        });
+
+        fs.writeFileSync(todayFile, updatedLines.join('\n'), 'utf8');
+    }
+
+    async _addKR(data) {
+        const todayFile = this._getTodayFilePath();
+        if (!fs.existsSync(todayFile)) {
+            return;
+        }
+
+        let content = fs.readFileSync(todayFile, 'utf8');
+        const lines = content.split('\n');
+        
+        // 找到最后一个 KR 的位置
+        let lastKRIndex = -1;
+        for (let i = lines.length - 1; i >= 0; i--) {
+            if (lines[i].startsWith('- [')) {
+                lastKRIndex = i;
+                break;
+            }
+        }
+
+        // 计算新任务的权重
+        const currentKRs = this._parseMdContent(content).keyResults;
+        const totalKRs = currentKRs.length + 1;
+        const weightPerKR = Math.floor(100 / totalKRs);
+        const remainder = 100 % totalKRs;
+
+        // 更新所有任务的权重，保持原有任务的编号和内容不变
+        let krCount = 0;
+        const updatedLines = lines.map(line => {
+            if (line.startsWith('- [')) {
+                krCount++;
+                const kr = this._parseKRLine(line);
+                if (kr) {
+                    const checkMark = kr.completed ? 'x' : ' ';
+                    const completionTime = kr.completionTime ? `, 完成时间: ${kr.completionTime}` : '';
+                    return `- [${checkMark}] KR${krCount}: ${kr.content} (权重: ${weightPerKR}%${completionTime})`;
+                }
+            }
+            return line;
+        });
+
+        // 添加新任务
+        const newKRLine = `- [ ] KR${currentKRs.length + 1}: ${data.content} (权重: ${weightPerKR + remainder}%)`;
+        if (lastKRIndex === -1) {
+            // 如果没有找到任何 KR，添加到文件末尾
+            updatedLines.push(newKRLine);
+        } else {
+            // 在最后一个 KR 后插入新任务
+            updatedLines.splice(lastKRIndex + 1, 0, newKRLine);
+        }
+
+        fs.writeFileSync(todayFile, updatedLines.join('\n'), 'utf8');
+    }
+
+    async _deleteKR(data) {
+        const todayFile = this._getTodayFilePath();
+        if (!fs.existsSync(todayFile)) {
+            return;
+        }
+
+        let content = fs.readFileSync(todayFile, 'utf8');
+        const lines = content.split('\n');
+        let krIndex = -1;
+        const updatedLines = lines.filter(line => {
+            if (line.startsWith('- [')) {
+                krIndex++;
+                return krIndex !== data.index;
+            }
+            return true;
+        });
+
+        // 重新计算权重
+        const remainingKRs = this._parseMdContent(updatedLines.join('\n')).keyResults;
+        if (remainingKRs.length > 0) {
+            const weightPerKR = Math.floor(100 / remainingKRs.length);
+            const remainder = 100 % remainingKRs.length;
+
+            krIndex = -1;
+            const finalLines = updatedLines.map(line => {
+                if (line.startsWith('- [')) {
+                    krIndex++;
+                    const kr = this._parseKRLine(line);
+                    if (kr) {
+                        const checkMark = kr.completed ? 'x' : ' ';
+                        const completionTime = kr.completionTime ? `, 完成时间: ${kr.completionTime}` : '';
+                        const weight = krIndex === remainingKRs.length - 1 ? weightPerKR + remainder : weightPerKR;
+                        return `- [${checkMark}] KR${krIndex + 1}: ${kr.content} (权重: ${weight}%${completionTime})`;
+                    }
+                }
+                return line;
+            });
+
+            fs.writeFileSync(todayFile, finalLines.join('\n'), 'utf8');
+        } else {
+            fs.writeFileSync(todayFile, updatedLines.join('\n'), 'utf8');
+        }
+    }
+
+    async _reorderKR(data) {
+        const todayFile = this._getTodayFilePath();
+        if (!fs.existsSync(todayFile)) {
+            return;
+        }
+
+        let content = fs.readFileSync(todayFile, 'utf8');
+        const lines = content.split('\n');
+        const krLines = [];
+        const otherLines = [];
+
+        // 分离KR行和其他行
+        lines.forEach(line => {
+            if (line.startsWith('- [')) {
+                krLines.push(line);
+            } else {
+                otherLines.push(line);
+            }
+        });
+
+        // 移动KR行
+        const [movedLine] = krLines.splice(data.fromIndex, 1);
+        krLines.splice(data.toIndex, 0, movedLine);
+
+        // 重新编号和计算权重
+        const weightPerKR = Math.floor(100 / krLines.length);
+        const remainder = 100 % krLines.length;
+
+        const updatedKRLines = krLines.map((line, index) => {
+            const kr = this._parseKRLine(line);
+            if (kr) {
+                const checkMark = kr.completed ? 'x' : ' ';
+                const completionTime = kr.completionTime ? `, 完成时间: ${kr.completionTime}` : '';
+                const weight = index === krLines.length - 1 ? weightPerKR + remainder : weightPerKR;
+                return `- [${checkMark}] KR${index + 1}: ${kr.content} (权重: ${weight}%${completionTime})`;
+            }
+            return line;
+        });
+
+        // 重建文件内容
+        let newContent = '';
+        let krIndex = 0;
+        otherLines.forEach(line => {
+            newContent += line + '\n';
+            if (line === '## 关键结果:') {
+                newContent += '\n';
+                updatedKRLines.forEach(krLine => {
+                    newContent += krLine + '\n';
+                });
+            }
+        });
+
+        fs.writeFileSync(todayFile, newContent.trim(), 'utf8');
+    }
+
+    async _getWebviewContent(todoData) {
+        const htmlPath = path.join(this.context.extensionPath, 'todolist.html');
+        let html = fs.readFileSync(htmlPath, 'utf8');
+
+        // 使用实例的创建时间
+        html = html.replace(
+            'const creationTime = new Date();',
+            `const creationTime = new Date('${this._creationTime}');`
+        );
+
+        // 添加占位符样式
+        html = html.replace('</style>', `
+            .todo-text.placeholder {
+                color: var(--vscode-input-placeholderForeground);
+            }
+        </style>`);
+
+        html = html.replace(
+            '<ul class="todo-list" id="todo-list">',
+            `<ul class="todo-list" id="todo-list">
+            <li class="todo-objective">
+                <h2>${todoData.objective}</h2>
+            </li>
+            ${todoData.keyResults.map((kr, index) => `
+                <li class="todo-item" data-index="${index}">
+                    <input type="checkbox" class="todo-checkbox" ${kr.completed ? 'checked' : ''} onchange="markCompleted(this)">
+                    <span class="todo-text ${kr.completed ? 'todo-completed' : ''} ${!kr.content ? 'placeholder' : ''}">${kr.content || '新建任务'}</span>
+                    <span class="todo-weight">${kr.weight}%</span>
+                    ${kr.completionTime ? `<span class="todo-completion-time">${kr.completionTime}</span>` : ''}
+                    <button class="delete-button" onclick="deleteTask(${index})" title="删除任务">×</button>
+                </li>
+            `).join('')}`
+        );
+
+        return html;
+    }
+}
+
 function activate(context) {
     console.log('FOYG extension is now active');
+
+    // 默认隐藏 todolist
+    vscode.commands.executeCommand('setContext', 'foyg:showTodoList', false);
 
     // 检查今天是否已经设置了目标
     checkTodayGoal().then(result => {
         const panel = GoalPanel.getInstance(context);
-        if (result.exists) {
-            // 如果今天已经有目标，加载已有数据
-            panel.show(result.data);
-        } else {
+        if (!result.exists) {
             // 如果今天还没有设置目标，显示空白的目标设置面板
             panel.show();
+        } else {
+            // 如果已有目标，加载数据到设置面板
+            panel.show(result.data);
         }
     });
 
@@ -402,6 +792,12 @@ function activate(context) {
             vscode.commands.executeCommand('foyg.setGoal');
         }
     });
+
+    // Register sidebar provider
+    const sidebarProvider = new FoygSidebarProvider(context);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider('foyg-todo', sidebarProvider)
+    );
 
     context.subscriptions.push(setGoalCommand, viewGoalCommand);
 }

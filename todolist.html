@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FOYG Today's Goals</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            margin: 0;
+            padding: 10px;
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+        }
+        .todo-container {
+            max-width: 100%;
+        }
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding: 8px;
+            background-color: var(--vscode-editor-selectionBackground);
+            border-radius: 4px;
+        }
+        .progress-container {
+            flex-grow: 1;
+            height: 6px;
+            background-color: rgba(128, 128, 128, 0.2);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0;
+            transition: width 0.3s ease, background-color 0.3s ease;
+            border-radius: 3px;
+        }
+        .progress-label {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            white-space: nowrap;
+        }
+        .timer-label {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            white-space: nowrap;
+            padding-left: 10px;
+            border-left: 1px solid var(--vscode-panel-border);
+        }
+        .todo-objective {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: var(--vscode-editor-selectionBackground);
+            border-radius: 4px;
+        }
+        .todo-objective h2 {
+            margin: 0;
+            font-size: 14px;
+            color: var(--vscode-foreground);
+        }
+        .todo-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        .todo-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            gap: 8px;
+            background-color: var(--vscode-editor-background);
+            cursor: move;
+            user-select: none;
+            position: relative;
+        }
+        .todo-item.dragging {
+            opacity: 0.5;
+            background-color: var(--vscode-editor-selectionBackground);
+        }
+        .todo-item.drag-over {
+            border-top: 2px solid var(--vscode-focusBorder);
+        }
+        .drag-handle {
+            cursor: move;
+            color: var(--vscode-descriptionForeground);
+            opacity: 0.6;
+            padding: 0 4px;
+        }
+        .drag-handle:hover {
+            opacity: 1;
+        }
+        .todo-checkbox {
+            margin: 0;
+        }
+        .todo-text {
+            flex-grow: 1;
+            font-size: 13px;
+            padding: 4px 8px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            cursor: text;
+        }
+        .todo-text:hover {
+            border-color: var(--vscode-input-border);
+            background-color: var(--vscode-input-background);
+        }
+        .todo-text:focus {
+            outline: none;
+            border-color: var(--vscode-focusBorder);
+            background-color: var(--vscode-input-background);
+        }
+        .todo-completed {
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+        .todo-weight {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            padding: 2px 6px;
+            background: var(--vscode-badge-background);
+            border-radius: 3px;
+            min-width: 30px;
+            text-align: center;
+        }
+        .todo-completion-time {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            white-space: nowrap;
+        }
+        .add-task-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 6px 12px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.2s;
+        }
+        .add-task-button:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        .add-task-button .plus-icon {
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .add-task-container {
+            display: flex;
+            justify-content: flex-start;
+            padding: 0 8px;
+        }
+        .delete-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border: none;
+            background: none;
+            color: var(--vscode-errorForeground);
+            cursor: pointer;
+            opacity: 0.6;
+            font-size: 16px;
+            padding: 0;
+            margin-left: 4px;
+        }
+        .delete-button:hover {
+            opacity: 1;
+        }
+        .todo-item.drag-over-top {
+            border-top: 2px solid var(--vscode-focusBorder);
+            border-bottom: none;
+        }
+        .todo-item.drag-over-bottom {
+            border-bottom: 2px solid var(--vscode-focusBorder);
+            border-top: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="todo-container">
+        <div class="status-bar">
+            <div class="progress-container">
+                <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
+            </div>
+            <span class="progress-label" id="progress-label">0%</span>
+            <span class="timer-label" id="timer-label">00:00:00</span>
+        </div>
+        <ul class="todo-list" id="todo-list">
+            <!-- Content will be injected by JavaScript -->
+        </ul>
+    </div>
+
+    <script>
+        const vscode = acquireVsCodeApi();
+        let totalWeight = 0;
+        let completedWeight = 0;
+        const creationTime = new Date();
+        const taskCompletionTimes = new Map();
+        let draggedItem = null;
+        let dropPosition = null;
+
+        function formatElapsedTime(startTime, endTime) {
+            const diff = endTime - startTime;
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function updateProgress() {
+            const percentage = totalWeight === 0 ? 0 : Math.round((completedWeight / totalWeight) * 100);
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.width = `${percentage}%`;
+            document.getElementById('progress-label').textContent = `${percentage}%`;
+
+            // 根据完成度改变颜色
+            if (percentage === 0) {
+                progressBar.style.backgroundColor = 'var(--vscode-testing-iconFailed)'; // 红色
+            } else if (percentage < 30) {
+                progressBar.style.backgroundColor = '#ff6b6b'; // 浅红色
+            } else if (percentage < 50) {
+                progressBar.style.backgroundColor = '#ffd93d'; // 黄色
+            } else if (percentage < 80) {
+                progressBar.style.backgroundColor = '#6bcb77'; // 浅绿色
+            } else if (percentage < 100) {
+                progressBar.style.backgroundColor = '#4d96ff'; // 蓝色
+            } else {
+                progressBar.style.backgroundColor = 'var(--vscode-testing-iconPassed)'; // 完成绿色
+            }
+        }
+
+        function updateTimer() {
+            const now = new Date();
+            document.getElementById('timer-label').textContent = formatElapsedTime(creationTime, now);
+        }
+
+        setInterval(updateTimer, 1000);
+
+        function markCompleted(checkbox) {
+            const item = checkbox.closest('.todo-item');
+            const index = parseInt(item.dataset.index);
+            const text = item.querySelector('.todo-text');
+            const weight = item.querySelector('.todo-weight');
+            const weightValue = parseInt(weight.textContent);
+            
+            text.classList.toggle('todo-completed', checkbox.checked);
+            
+            // 更新完成权重
+            if (checkbox.checked) {
+                completedWeight += weightValue;
+                // 添加完成时间
+                const completionTime = formatElapsedTime(creationTime, new Date());
+                let timeSpan = item.querySelector('.todo-completion-time');
+                if (!timeSpan) {
+                    timeSpan = document.createElement('span');
+                    timeSpan.className = 'todo-completion-time';
+                    item.appendChild(timeSpan);
+                }
+                timeSpan.textContent = completionTime;
+                taskCompletionTimes.set(index, completionTime);
+            } else {
+                completedWeight -= weightValue;
+                // 移除完成时间
+                const timeSpan = item.querySelector('.todo-completion-time');
+                if (timeSpan) {
+                    timeSpan.remove();
+                }
+                taskCompletionTimes.delete(index);
+            }
+            
+            updateProgress();
+            
+            vscode.postMessage({
+                type: 'updateKR',
+                data: {
+                    index: index,
+                    completed: checkbox.checked,
+                    content: text.textContent,
+                    weight: weightValue,
+                    completionTime: taskCompletionTimes.get(index)
+                }
+            });
+        }
+
+        // 当内容被注入时，计算总权重和已完成权重
+        window.addEventListener('load', () => {
+            totalWeight = 0;
+            completedWeight = 0;
+            const items = document.querySelectorAll('.todo-item');
+            items.forEach(item => {
+                const weight = parseInt(item.querySelector('.todo-weight').textContent);
+                totalWeight += weight;
+                
+                const checkbox = item.querySelector('.todo-checkbox');
+                if (checkbox.checked) {
+                    completedWeight += weight;
+                }
+            });
+            updateProgress();
+            setupDragAndDrop();
+        });
+
+        // 删除任务
+        function deleteTask(index) {
+            vscode.postMessage({
+                type: 'deleteKR',
+                data: { index }
+            });
+        }
+
+        // 修改为单击编辑功能
+        function makeEditable(element) {
+            // 如果已经在编辑，则不需要再次触发
+            if (element.contentEditable === 'true') {
+                return;
+            }
+            
+            element.contentEditable = true;
+            element.focus();
+            
+            // 如果内容是占位符，则清空
+            if (element.textContent === '新建任务') {
+                element.textContent = '';
+            }
+            
+            // 保存原始内容，以便取消时恢复
+            element.dataset.originalContent = element.textContent;
+            
+            // 将光标移到末尾
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            range.collapse(false);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+
+        // 保存编辑的内容
+        function saveEdit(element) {
+            element.contentEditable = false;
+            const item = element.closest('.todo-item');
+            const index = parseInt(item.dataset.index);
+            const content = element.textContent.trim();
+            
+            if (content !== element.dataset.originalContent) {
+                vscode.postMessage({
+                    type: 'updateKR',
+                    data: {
+                        index: index,
+                        content: content,
+                        completed: item.querySelector('.todo-checkbox').checked,
+                        weight: parseInt(item.querySelector('.todo-weight').textContent),
+                        completionTime: taskCompletionTimes.get(index)
+                    }
+                });
+            }
+        }
+
+        // 取消编辑
+        function cancelEdit(element) {
+            element.contentEditable = false;
+            element.textContent = element.dataset.originalContent;
+        }
+
+        // 添加事件监听器
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('todo-text')) {
+                makeEditable(e.target);
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.classList.contains('todo-text')) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const item = e.target.closest('.todo-item');
+                    const index = parseInt(item.dataset.index);
+                    
+                    // 先保存当前编辑
+                    saveEdit(e.target);
+                    
+                    // 发送添加新任务的消息
+                    vscode.postMessage({
+                        type: 'addKR',
+                        data: {
+                            index: index + 1,
+                            content: '',
+                            completed: false,
+                            weight: 0
+                        }
+                    });
+                } else if (e.key === 'Escape') {
+                    cancelEdit(e.target);
+                }
+            }
+        });
+
+        document.addEventListener('focusout', (e) => {
+            if (e.target.classList.contains('todo-text') && e.target.contentEditable === 'true') {
+                saveEdit(e.target);
+            }
+        });
+
+        // 拖拽相关函数
+        function handleDragStart(e) {
+            draggedItem = e.target;
+            e.target.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', '');
+        }
+
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            const items = document.querySelectorAll('.todo-item');
+            items.forEach(item => {
+                item.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+            draggedItem = null;
+            dropPosition = null;
+        }
+
+        function updateDropIndicator(mouseY, currentTarget) {
+            const items = Array.from(document.querySelectorAll('.todo-item'));
+            items.forEach(item => {
+                item.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+
+            if (!currentTarget || currentTarget === draggedItem) {
+                dropPosition = null;
+                return;
+            }
+
+            const rect = currentTarget.getBoundingClientRect();
+            const threshold = rect.top + (rect.height / 2);
+            
+            // 只在鼠标位于上半部分时设置放置位置
+            if (mouseY < threshold) {
+                currentTarget.classList.add('drag-over-top');
+                dropPosition = {
+                    target: currentTarget,
+                    position: 'before'
+                };
+            } else {
+                // 如果鼠标在下半部分，清除放置位置
+                dropPosition = null;
+            }
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const item = e.target.closest('.todo-item');
+            updateDropIndicator(e.clientY, item);
+        }
+
+        function handleDragEnter(e) {
+            const item = e.target.closest('.todo-item');
+            updateDropIndicator(e.clientY, item);
+        }
+
+        function handleDragLeave(e) {
+            const item = e.target.closest('.todo-item');
+            if (item) {
+                // 只有当离开的是todo-item时才清除指示器
+                const relatedTarget = e.relatedTarget;
+                if (!item.contains(relatedTarget)) {
+                    item.classList.remove('drag-over-top', 'drag-over-bottom');
+                }
+            }
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            // 只有当dropPosition存在（即只有上边框高亮）时才执行放置
+            if (!dropPosition) return;
+
+            const todoList = document.getElementById('todo-list');
+            const fromIndex = parseInt(draggedItem.dataset.index);
+            const toIndex = parseInt(dropPosition.target.dataset.index);
+
+            // 插入到目标位置之前
+            dropPosition.target.parentNode.insertBefore(draggedItem, dropPosition.target);
+
+            // 更新所有任务的索引
+            const newItems = Array.from(todoList.querySelectorAll('.todo-item'));
+            newItems.forEach((item, index) => {
+                item.dataset.index = index;
+            });
+
+            // 发送重新排序消息
+            vscode.postMessage({
+                type: 'reorderKR',
+                data: {
+                    fromIndex,
+                    toIndex
+                }
+            });
+
+            // 清除所有拖拽相关的类和dropPosition
+            items.forEach(item => {
+                item.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+            dropPosition = null;
+        }
+
+        // 添加拖拽事件监听器
+        function setupDragAndDrop() {
+            const items = document.querySelectorAll('.todo-item');
+            items.forEach(item => {
+                item.setAttribute('draggable', 'true');
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragend', handleDragEnd);
+                item.addEventListener('dragover', handleDragOver);
+                item.addEventListener('dragenter', handleDragEnter);
+                item.addEventListener('dragleave', handleDragLeave);
+                item.addEventListener('drop', handleDrop);
+            });
+        }
+
+        // 在任务列表更新后重新设置拖拽
+        const observer = new MutationObserver(() => {
+            setupDragAndDrop();
+        });
+        observer.observe(document.getElementById('todo-list'), { childList: true, subtree: true });
+
+        // 移除不再需要的CSS类
+        const styleSheet = document.styleSheets[0];
+        for (let i = 0; i < styleSheet.cssRules.length; i++) {
+            const rule = styleSheet.cssRules[i];
+            if (rule.selectorText === '.todo-item.drag-over-bottom') {
+                styleSheet.deleteRule(i);
+                break;
+            }
+        }
+
+        // 确保在页面加载时重置进度条
+        window.addEventListener('DOMContentLoaded', () => {
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.width = '0%';
+        });
+    </script>
+</body>
+</html> 
