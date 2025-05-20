@@ -422,7 +422,7 @@ class FoygSidebarProvider {
     static _instance = null;
 
     constructor(context) {
-        this.context = context;
+        this._context = context;
         this._view = null;
         this._creationTime = new Date().toISOString();
     }
@@ -455,20 +455,15 @@ class FoygSidebarProvider {
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [
-                vscode.Uri.file(path.join(this.context.extensionPath, 'media')),
-                vscode.Uri.file(path.join(this.context.extensionPath, 'todos'))
+                vscode.Uri.file(path.join(this._context.extensionPath, 'media')),
+                vscode.Uri.file(path.join(this._context.extensionPath, 'todos')),
+                vscode.Uri.file(this._context.extensionPath)
             ]
         };
 
-        // 添加视图状态变化监听器
-        webviewView.onDidChangeVisibility(() => {
-            if (webviewView.visible) {
-                this._updateView();
-            }
-        });
+        this._updateView();
 
-        // 注册消息处理器
-        this._messageHandler = webviewView.webview.onDidReceiveMessage(async message => {
+        webviewView.webview.onDidReceiveMessage(async message => {
             switch (message.type) {
                 case 'updateKR':
                     await this._updateKR(message.data);
@@ -489,14 +484,254 @@ class FoygSidebarProvider {
                 case 'refresh':
                     await this._updateView();
                     break;
+                case 'saveLog':
+                    await this._saveLog(message.data);
+                    break;
             }
         });
-
-        // 初始化视图
-        this._updateView();
     }
 
-    async _updateView() {
+    async _saveLog(data) {
+        try {
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders) {
+                throw new Error('请先打开一个工作区文件夹');
+            }
+
+            // 在工作区创建 logs 文件夹
+            const logsPath = path.join(workspaceFolders[0].uri.fsPath, 'foyg-logs');
+            if (!fs.existsSync(logsPath)) {
+                fs.mkdirSync(logsPath);
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+            const logFileName = `foyg-log-${today}.json`;
+            const logFilePath = path.join(logsPath, logFileName);
+
+            // 读取当前的目标内容
+            const todayFilePath = this._getTodayFilePath();
+            const content = await fs.promises.readFile(todayFilePath, 'utf8');
+            const objective = content.match(/## 主要目标: (.+)/)?.[1] || '未设置目标';
+
+            // 构建日志数据
+            const logData = {
+                date: today,
+                objective: objective,
+                tasks: data.tasks,
+                totalTime: data.totalTime,
+                completedAt: data.completedAt
+            };
+
+            // 保存日志文件
+            await fs.promises.writeFile(logFilePath, JSON.stringify(logData, null, 2), 'utf8');
+
+            // 显示成功消息并打开日志文件
+            vscode.window.showInformationMessage(`任务完成！日志已保存到: ${logFileName}`, '查看日志').then(selection => {
+                if (selection === '查看日志') {
+                    vscode.workspace.openTextDocument(logFilePath).then(doc => {
+                        vscode.window.showTextDocument(doc);
+                    });
+                }
+            });
+
+            // 更新视图为完成状态
+            if (this._view) {
+                this._view.webview.html = this._getCompletionContent();
+            }
+        } catch (error) {
+            console.error('保存日志失败:', error);
+            vscode.window.showErrorMessage('保存日志失败: ' + error.message);
+        }
+    }
+
+    _getCompletionContent() {
+        const encouragingMessages = [
+            "干得漂亮！每个完成的任务都是成长的见证",
+            "完美的一天！继续保持这样的热情和专注",
+            "出色的完成度！你的每一步都在接近更好的自己",
+            "今天的成就值得庆祝，明天继续加油",
+            "目标达成！你的坚持和努力让人敬佩",
+            "干得漂亮！每个完成的任务都是成长的见证"
+        ];
+
+        const randomMessage = encouragingMessages[Math.floor(Math.random() * encouragingMessages.length)];
+
+        return `<!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                @keyframes fadeIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+
+                @keyframes gradientText {
+                    0% { background-position: 0% 50%; }
+                    50% { background-position: 100% 50%; }
+                    100% { background-position: 0% 50%; }
+                }
+
+                body {
+                    font-family: "华文行楷", "楷体", "STKaiti", cursive;
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                    color: var(--vscode-foreground);
+                    background-color: var(--vscode-editor-background);
+                    overflow: hidden;
+                }
+
+                .message {
+                    font-size: 24px;
+                    line-height: 1.8;
+                    text-align: center;
+                    z-index: 100;
+                    background: linear-gradient(90deg, 
+                        var(--vscode-textLink-foreground),
+                        var(--vscode-textLink-activeForeground),
+                        var(--vscode-textLink-foreground));
+                    background-size: 200% auto;
+                    -webkit-background-clip: text;
+                    background-clip: text;
+                    color: transparent;
+                    animation: 
+                        fadeIn 1.5s ease-out forwards,
+                        gradientText 3s ease infinite;
+                    letter-spacing: 2px;
+                    position: relative;
+                }
+
+                canvas {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    z-index: 1;
+                    pointer-events: none;
+                }
+            </style>
+        </head>
+        <body>
+            <canvas id="fireworks"></canvas>
+            <div class="message">
+                ${randomMessage}
+            </div>
+            <script>
+                class Firework {
+                    constructor(canvas) {
+                        this.canvas = canvas;
+                        this.ctx = canvas.getContext('2d');
+                        this.particles = [];
+                        this.hue = 120;
+                        this.isRunning = true;
+                    }
+
+                    createParticles(x, y, count = 50) {
+                        for (let i = 0; i < count; i++) {
+                            const particle = {
+                                x,
+                                y,
+                                vx: (Math.random() - 0.5) * 8,
+                                vy: (Math.random() - 0.5) * 8,
+                                alpha: 1,
+                                hue: this.hue,
+                                saturation: Math.random() * 50 + 50,
+                                brightness: Math.random() * 50 + 50
+                            };
+                            this.particles.push(particle);
+                        }
+                        this.hue += 20;
+                        if (this.hue > 360) this.hue = 0;
+                    }
+
+                    update() {
+                        this.particles.forEach((particle, index) => {
+                            particle.x += particle.vx;
+                            particle.y += particle.vy;
+                            particle.vy += 0.05; // 重力
+                            particle.alpha *= 0.98; // 淡出
+
+                            if (particle.alpha <= 0.01) {
+                                this.particles.splice(index, 1);
+                            }
+                        });
+                    }
+
+                    draw() {
+                        this.ctx.globalCompositeOperation = 'lighter';
+                        this.particles.forEach(particle => {
+                            this.ctx.beginPath();
+                            this.ctx.arc(particle.x, particle.y, 2, 0, Math.PI * 2);
+                            this.ctx.fillStyle = \`hsla(\${particle.hue}, \${particle.saturation}%, \${particle.brightness}%, \${particle.alpha})\`;
+                            this.ctx.fill();
+                        });
+                    }
+
+                    clear() {
+                        this.ctx.globalCompositeOperation = 'source-over';
+                        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                    }
+
+                    resize() {
+                        this.canvas.width = window.innerWidth;
+                        this.canvas.height = window.innerHeight;
+                    }
+
+                    animate() {
+                        if (!this.isRunning) return;
+                        
+                        this.clear();
+                        this.update();
+                        this.draw();
+
+                        if (Math.random() < 0.05) {
+                            const x = Math.random() * this.canvas.width;
+                            const y = Math.random() * this.canvas.height;
+                            this.createParticles(x, y);
+                        }
+
+                        requestAnimationFrame(() => this.animate());
+                    }
+
+                    start() {
+                        this.resize();
+                        window.addEventListener('resize', () => this.resize());
+                        this.animate();
+                    }
+
+                    stop() {
+                        this.isRunning = false;
+                    }
+                }
+
+                // 启动烟花效果
+                const canvas = document.getElementById('fireworks');
+                const firework = new Firework(canvas);
+                firework.start();
+
+                // 30秒后停止烟花效果
+                setTimeout(() => {
+                    firework.stop();
+                }, 30000);
+            </script>
+        </body>
+        </html>`;
+    }
+
+    _updateView() {
         if (!this._view) {
             return;
         }
@@ -510,7 +745,7 @@ class FoygSidebarProvider {
             todoData = this._parseMdContent(content);
         }
 
-        const htmlContent = await this._getWebviewContent(todoData);
+        const htmlContent = this._getWebviewContent(todoData);
         this._view.webview.html = htmlContent;
     }
 
@@ -721,8 +956,8 @@ class FoygSidebarProvider {
         fs.writeFileSync(todayFile, newContent.trim(), 'utf8');
     }
 
-    async _getWebviewContent(todoData) {
-        const htmlPath = path.join(this.context.extensionPath, 'todolist.html');
+    _getWebviewContent(todoData) {
+        const htmlPath = path.join(this._context.extensionPath, 'todolist.html');
         let html = fs.readFileSync(htmlPath, 'utf8');
 
         // 使用实例的创建时间

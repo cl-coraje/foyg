@@ -183,6 +183,25 @@
             border-bottom: 2px solid var(--vscode-focusBorder);
             border-top: none;
         }
+        .complete-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            cursor: not-allowed;
+            opacity: 0.5;
+            transition: all 0.3s ease;
+        }
+        .complete-button.active {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            cursor: pointer;
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -197,6 +216,7 @@
         <ul class="todo-list" id="todo-list">
             <!-- Content will be injected by JavaScript -->
         </ul>
+        <button id="complete-button" class="complete-button">完成</button>
     </div>
 
     <script>
@@ -207,6 +227,8 @@
         const taskCompletionTimes = new Map();
         let draggedItem = null;
         let dropPosition = null;
+        let timerInterval = null;
+        let lastTimerValue = '00:00:00';  // 添加变量保存最后的时间值
 
         function formatElapsedTime(startTime, endTime) {
             const diff = endTime - startTime;
@@ -216,11 +238,60 @@
             return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         }
 
+        function startTimer() {
+            if (!timerInterval) {
+                timerInterval = setInterval(updateTimer, 1000);
+            }
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                // 保存当前时间值
+                lastTimerValue = document.getElementById('timer-label').textContent;
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
         function updateProgress() {
             const percentage = totalWeight === 0 ? 0 : Math.round((completedWeight / totalWeight) * 100);
             const progressBar = document.getElementById('progress-bar');
             progressBar.style.width = `${percentage}%`;
             document.getElementById('progress-label').textContent = `${percentage}%`;
+
+            // 更新按钮状态
+            const completeButton = document.getElementById('complete-button');
+            if (percentage === 100) {
+                completeButton.classList.add('active');
+                // 添加点击事件监听器
+                completeButton.onclick = function() {
+                    if (completeButton.classList.contains('active')) {
+                        // 收集所有任务信息
+                        const tasks = Array.from(document.querySelectorAll('.todo-item')).map(item => {
+                            return {
+                                content: item.querySelector('.todo-text').textContent,
+                                weight: parseInt(item.querySelector('.todo-weight').textContent),
+                                completed: item.querySelector('.todo-checkbox').checked,
+                                completionTime: taskCompletionTimes.get(parseInt(item.dataset.index))
+                            };
+                        });
+
+                        // 发送消息到extension
+                        vscode.postMessage({
+                            type: 'saveLog',
+                            data: {
+                                tasks: tasks,
+                                totalTime: lastTimerValue,
+                                completedAt: new Date().toISOString()
+                            }
+                        });
+                    }
+                };
+            } else {
+                completeButton.classList.remove('active');
+                // 移除点击事件监听器
+                completeButton.onclick = null;
+            }
 
             // 根据完成度改变颜色
             if (percentage === 0) {
@@ -235,15 +306,28 @@
                 progressBar.style.backgroundColor = '#4d96ff'; // 蓝色
             } else {
                 progressBar.style.backgroundColor = 'var(--vscode-testing-iconPassed)'; // 完成绿色
+                stopTimer(); // 当进度为100%时停止计时
             }
         }
 
         function updateTimer() {
             const now = new Date();
-            document.getElementById('timer-label').textContent = formatElapsedTime(creationTime, now);
+            const currentTime = formatElapsedTime(creationTime, now);
+            
+            if (!timerInterval) {
+                // 如果计时器已停止，确保显示最后保存的有效时间值
+                if (lastTimerValue === '00:00:00') {
+                    lastTimerValue = currentTime;
+                }
+                document.getElementById('timer-label').textContent = lastTimerValue;
+            } else {
+                document.getElementById('timer-label').textContent = currentTime;
+                lastTimerValue = currentTime; // 更新最后的时间值
+            }
         }
 
-        setInterval(updateTimer, 1000);
+        // 启动计时器
+        startTimer();
 
         function markCompleted(checkbox) {
             const item = checkbox.closest('.todo-item');
@@ -258,7 +342,7 @@
             if (checkbox.checked) {
                 completedWeight += weightValue;
                 // 添加完成时间
-                const completionTime = formatElapsedTime(creationTime, new Date());
+                const completionTime = timerInterval ? formatElapsedTime(creationTime, new Date()) : lastTimerValue;
                 let timeSpan = item.querySelector('.todo-completion-time');
                 if (!timeSpan) {
                     timeSpan = document.createElement('span');
@@ -275,6 +359,8 @@
                     timeSpan.remove();
                 }
                 taskCompletionTimes.delete(index);
+                // 如果取消勾选，重新启动计时器
+                startTimer();
             }
             
             updateProgress();
@@ -307,6 +393,25 @@
             });
             updateProgress();
             setupDragAndDrop();
+
+            // 检查是否所有任务都已完成
+            if (totalWeight > 0 && totalWeight === completedWeight) {
+                // 如果所有任务都已完成，停止计时器并更新一次时间
+                const now = new Date();
+                lastTimerValue = formatElapsedTime(creationTime, now);
+                document.getElementById('timer-label').textContent = lastTimerValue;
+                stopTimer();
+            } else {
+                // 否则启动计时器
+                startTimer();
+            }
+        });
+
+        // 确保在页面加载时重置进度条和更新时间
+        window.addEventListener('DOMContentLoaded', () => {
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.width = '0%';
+            updateTimer(); // 确保时间显示正确
         });
 
         // 删除任务
@@ -541,12 +646,6 @@
                 break;
             }
         }
-
-        // 确保在页面加载时重置进度条
-        window.addEventListener('DOMContentLoaded', () => {
-            const progressBar = document.getElementById('progress-bar');
-            progressBar.style.width = '0%';
-        });
     </script>
 </body>
 </html> 

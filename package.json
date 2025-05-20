@@ -1,7 +1,7 @@
 {
     "name": "foyg",
     "displayName": "FOYG",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "publisher": "cl-coraje",
     "description": "FOYG (Focus On Your Goal) - Help you stay focused on your current goal",
     "engines": {
