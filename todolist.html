@@ -21,21 +21,20 @@
             gap: 10px;
             margin-bottom: 15px;
             padding: 8px;
-            background-color: var(--vscode-editor-selectionBackground);
             border-radius: 4px;
         }
         .progress-container {
             flex-grow: 1;
-            height: 6px;
+            height: 10px;
             background-color: rgba(128, 128, 128, 0.2);
-            border-radius: 3px;
+            border-radius: 5px;
             overflow: hidden;
         }
         .progress-bar {
             height: 100%;
             width: 0;
             transition: width 0.3s ease, background-color 0.3s ease;
-            border-radius: 3px;
+            border-radius: 5px;
         }
         .progress-label {
             font-size: 12px;
@@ -52,7 +51,6 @@
         .todo-objective {
             margin: 10px 0;
             padding: 10px;
-            background-color: var(--vscode-editor-selectionBackground);
             border-radius: 4px;
         }
         .todo-objective h2 {
@@ -190,15 +188,15 @@
             padding: 8px 16px;
             border: none;
             border-radius: 4px;
-            background-color: var(--vscode-button-secondaryBackground);
-            color: var(--vscode-button-secondaryForeground);
+            background-color: rgba(33, 33, 33, 0.2);
+            color: #212121;
             cursor: not-allowed;
             opacity: 0.5;
             transition: all 0.3s ease;
         }
         .complete-button.active {
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
+            background-color: #212121;
+            color: white;
             cursor: pointer;
             opacity: 1;
         }
@@ -268,13 +266,25 @@
                     if (completeButton.classList.contains('active')) {
                         // 收集所有任务信息
                         const tasks = Array.from(document.querySelectorAll('.todo-item')).map(item => {
+                            const index = parseInt(item.dataset.index);
+                            const isCompleted = item.querySelector('.todo-checkbox').checked;
+                            // 只有当任务完成时才获取完成时间
+                            const completionTime = isCompleted ? taskCompletionTimes.get(index) : null;
                             return {
                                 content: item.querySelector('.todo-text').textContent,
                                 weight: parseInt(item.querySelector('.todo-weight').textContent),
-                                completed: item.querySelector('.todo-checkbox').checked,
-                                completionTime: taskCompletionTimes.get(parseInt(item.dataset.index))
+                                completed: isCompleted,
+                                completionTime: completionTime
                             };
                         });
+
+                        // 格式化开始和结束时间
+                        const startDate = creationTime;
+                        const endDate = new Date();
+                        const formatDate = (date) => {
+                            return `${date.getMonth() + 1}月${date.getDate()}日${date.getHours()}点${date.getMinutes()}分`;
+                        };
+                        const timeRange = `${formatDate(startDate)} - ${formatDate(endDate)}`;
 
                         // 发送消息到extension
                         vscode.postMessage({
@@ -282,6 +292,7 @@
                             data: {
                                 tasks: tasks,
                                 totalTime: lastTimerValue,
+                                timeRange: timeRange,
                                 completedAt: new Date().toISOString()
                             }
                         });
@@ -508,7 +519,7 @@
                 }
             }
         });
-
+        
         document.addEventListener('focusout', (e) => {
             if (e.target.classList.contains('todo-text') && e.target.contentEditable === 'true') {
                 saveEdit(e.target);

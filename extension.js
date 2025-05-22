@@ -207,13 +207,20 @@ class GoalPanel {
                 <title>FOYG - Focus On Your Goal</title>
                 <link href="${mainStyleUri}" rel="stylesheet">
                 <style>
+                    :root {
+                        --md-primary: #212121;
+                        --md-secondary: #424242;
+                        --md-border: rgba(33, 33, 33, 0.12);
+                    }
                     .codicon {
                         font-family: codicon;
                         font-size: 16px;
                         font-style: normal;
+                        color: var(--md-primary);
                     }
                     body {
                         padding: 20px;
+                        color: var(--md-primary);
                     }
                     .container {
                         max-width: 800px;
@@ -222,13 +229,71 @@ class GoalPanel {
                     .settings-section {
                         margin: 20px 0;
                         padding: 10px;
-                        border-top: 1px solid var(--vscode-input-border);
+                        border-top: 1px solid var(--md-border);
                     }
                     .checkbox-wrapper {
                         display: flex;
                         align-items: center;
                         gap: 8px;
                     }
+                    .section-header {
+                        color: var(--md-primary);
+                    }
+                    .section-number {
+                        background-color: var(--md-primary);
+                        color: white;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        margin-right: 10px;
+                    }
+                    .input-field {
+                        border: 1px solid var(--md-border);
+                        color: var(--md-primary);
+                    }
+                    .input-field:focus {
+                        border-color: var(--md-primary);
+                        outline: none;
+                    }
+                    .btn {
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-weight: 500;
+                        transition: all 0.3s ease;
+                    }
+                    .btn-primary {
+                        background-color: var(--md-primary);
+                        color: white;
+                    }
+                    .btn-primary:hover {
+                        background-color: var(--md-secondary);
+                    }
+                    .btn-secondary {
+                        background-color: transparent;
+                        color: var(--md-primary);
+                        border: 1px solid var(--md-border);
+                    }
+                    .btn-secondary:hover {
+                        background-color: var(--md-border);
+                    }
+                    .add-kr-button {
+                        color: var(--md-primary);
+                        background: transparent;
+                        border: 1px solid var(--md-border);
+                        border-radius: 4px;
+                        padding: 8px 16px;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 14px;
+                        transition: all 0.3s ease;
+                    }
+                    .add-kr-button:hover {
+                        background-color: var(--md-border);
+                    }
+                    /* 移除重复的 todo-checkbox 样式，使用 todolist.html 中的样式 */
                 </style>
             </head>
             <body>
@@ -498,6 +563,19 @@ class FoygSidebarProvider {
                 throw new Error('请先打开一个工作区文件夹');
             }
 
+            // 删除旧的 md 文件
+            const todosPath = path.join(workspaceFolders[0].uri.fsPath, 'todos');
+            if (fs.existsSync(todosPath)) {
+                const files = fs.readdirSync(todosPath)
+                    .filter(file => file.endsWith('.md'))
+                    .sort((a, b) => b.localeCompare(a));
+                
+                // 保留最新的文件，删除其他文件
+                for (let i = 1; i < files.length; i++) {
+                    fs.unlinkSync(path.join(todosPath, files[i]));
+                }
+            }
+
             // 在工作区创建 logs 文件夹
             const logsPath = path.join(workspaceFolders[0].uri.fsPath, 'foyg-logs');
             if (!fs.existsSync(logsPath)) {
@@ -517,8 +595,12 @@ class FoygSidebarProvider {
             const logData = {
                 date: today,
                 objective: objective,
-                tasks: data.tasks,
+                tasks: data.tasks.map(task => ({
+                    ...task,
+                    completionTime: task.completionTime || null
+                })),
                 totalTime: data.totalTime,
+                timeRange: data.timeRange,
                 completedAt: data.completedAt
             };
 
@@ -545,188 +627,122 @@ class FoygSidebarProvider {
     }
 
     _getCompletionContent() {
-        const encouragingMessages = [
-            "干得漂亮！每个完成的任务都是成长的见证",
-            "完美的一天！继续保持这样的热情和专注",
-            "出色的完成度！你的每一步都在接近更好的自己",
-            "今天的成就值得庆祝，明天继续加油",
-            "目标达成！你的坚持和努力让人敬佩",
-            "干得漂亮！每个完成的任务都是成长的见证"
-        ];
-
-        const randomMessage = encouragingMessages[Math.floor(Math.random() * encouragingMessages.length)];
-
         return `<!DOCTYPE html>
         <html lang="zh-CN">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-                @keyframes fadeIn {
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Heiti SC", "黑体", "Microsoft YaHei", sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                    background-color: var(--vscode-editor-background);
+                }
+
+                .check-container {
+                    position: relative;
+                    width: 50px;
+                    height: 50px;
+                    margin-bottom: 20px;
+                }
+
+                .circle {
+                    position: absolute;
+                    width: 100%;
+                    height: 100%;
+                    border: 3px solid #4CAF50;
+                    border-radius: 50%;
+                    animation: circle-animation 0.6s ease-in-out forwards;
+                    opacity: 0;
+                    transform: scale(0.5);
+                }
+
+                .checkmark {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-48%, -48%);
+                    width: 46px;
+                    height: 46px;
+                }
+
+                .checkmark svg {
+                    width: 100%;
+                    height: 100%;
+                    display: block;
+                }
+
+                .checkmark path {
+                    fill: none;
+                    stroke: #4CAF50;
+                    stroke-width: 4;
+                    stroke-linecap: round;
+                    stroke-linejoin: round;
+                    stroke-dasharray: 70;
+                    stroke-dashoffset: 70;
+                    animation: checkmark-animation 0.4s ease-in-out 0.6s forwards;
+                }
+
+                .completion-text {
+                    color: var(--vscode-editor-foreground);
+                    font-size: 16px;
+                    opacity: 0;
+                    animation: text-fade-in 0.3s ease-in-out 1s forwards;
+                    margin-right: -20px;
+                }
+
+                @keyframes circle-animation {
+                    0% {
+                        transform: scale(0.5);
+                        opacity: 0;
+                    }
+                    50% {
+                        transform: scale(1.1);
+                        opacity: 0.8;
+                    }
+                    100% {
+                        transform: scale(1);
+                        opacity: 1;
+                    }
+                }
+
+                @keyframes checkmark-animation {
+                    from {
+                        stroke-dashoffset: 70;
+                    }
+                    to {
+                        stroke-dashoffset: 0;
+                    }
+                }
+
+                @keyframes text-fade-in {
                     from {
                         opacity: 0;
-                        transform: translateY(20px);
+                        transform: translateY(10px);
                     }
                     to {
                         opacity: 1;
                         transform: translateY(0);
                     }
                 }
-
-                @keyframes gradientText {
-                    0% { background-position: 0% 50%; }
-                    50% { background-position: 100% 50%; }
-                    100% { background-position: 0% 50%; }
-                }
-
-                body {
-                    font-family: "华文行楷", "楷体", "STKaiti", cursive;
-                    margin: 0;
-                    padding: 0;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    min-height: 100vh;
-                    color: var(--vscode-foreground);
-                    background-color: var(--vscode-editor-background);
-                    overflow: hidden;
-                }
-
-                .message {
-                    font-size: 24px;
-                    line-height: 1.8;
-                    text-align: center;
-                    z-index: 100;
-                    background: linear-gradient(90deg, 
-                        var(--vscode-textLink-foreground),
-                        var(--vscode-textLink-activeForeground),
-                        var(--vscode-textLink-foreground));
-                    background-size: 200% auto;
-                    -webkit-background-clip: text;
-                    background-clip: text;
-                    color: transparent;
-                    animation: 
-                        fadeIn 1.5s ease-out forwards,
-                        gradientText 3s ease infinite;
-                    letter-spacing: 2px;
-                    position: relative;
-                }
-
-                canvas {
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    z-index: 1;
-                    pointer-events: none;
-                }
             </style>
         </head>
         <body>
-            <canvas id="fireworks"></canvas>
-            <div class="message">
-                ${randomMessage}
+            <div class="check-container">
+                <div class="circle"></div>
+                <div class="checkmark">
+                    <svg viewBox="0 0 46 46">
+                        <path d="M14,25 L22,33 L36,16"/>
+                    </svg>
+                </div>
             </div>
-            <script>
-                class Firework {
-                    constructor(canvas) {
-                        this.canvas = canvas;
-                        this.ctx = canvas.getContext('2d');
-                        this.particles = [];
-                        this.hue = 120;
-                        this.isRunning = true;
-                    }
-
-                    createParticles(x, y, count = 50) {
-                        for (let i = 0; i < count; i++) {
-                            const particle = {
-                                x,
-                                y,
-                                vx: (Math.random() - 0.5) * 8,
-                                vy: (Math.random() - 0.5) * 8,
-                                alpha: 1,
-                                hue: this.hue,
-                                saturation: Math.random() * 50 + 50,
-                                brightness: Math.random() * 50 + 50
-                            };
-                            this.particles.push(particle);
-                        }
-                        this.hue += 20;
-                        if (this.hue > 360) this.hue = 0;
-                    }
-
-                    update() {
-                        this.particles.forEach((particle, index) => {
-                            particle.x += particle.vx;
-                            particle.y += particle.vy;
-                            particle.vy += 0.05; // 重力
-                            particle.alpha *= 0.98; // 淡出
-
-                            if (particle.alpha <= 0.01) {
-                                this.particles.splice(index, 1);
-                            }
-                        });
-                    }
-
-                    draw() {
-                        this.ctx.globalCompositeOperation = 'lighter';
-                        this.particles.forEach(particle => {
-                            this.ctx.beginPath();
-                            this.ctx.arc(particle.x, particle.y, 2, 0, Math.PI * 2);
-                            this.ctx.fillStyle = \`hsla(\${particle.hue}, \${particle.saturation}%, \${particle.brightness}%, \${particle.alpha})\`;
-                            this.ctx.fill();
-                        });
-                    }
-
-                    clear() {
-                        this.ctx.globalCompositeOperation = 'source-over';
-                        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-                    }
-
-                    resize() {
-                        this.canvas.width = window.innerWidth;
-                        this.canvas.height = window.innerHeight;
-                    }
-
-                    animate() {
-                        if (!this.isRunning) return;
-                        
-                        this.clear();
-                        this.update();
-                        this.draw();
-
-                        if (Math.random() < 0.05) {
-                            const x = Math.random() * this.canvas.width;
-                            const y = Math.random() * this.canvas.height;
-                            this.createParticles(x, y);
-                        }
-
-                        requestAnimationFrame(() => this.animate());
-                    }
-
-                    start() {
-                        this.resize();
-                        window.addEventListener('resize', () => this.resize());
-                        this.animate();
-                    }
-
-                    stop() {
-                        this.isRunning = false;
-                    }
-                }
-
-                // 启动烟花效果
-                const canvas = document.getElementById('fireworks');
-                const firework = new Firework(canvas);
-                firework.start();
-
-                // 30秒后停止烟花效果
-                setTimeout(() => {
-                    firework.stop();
-                }, 30000);
-            </script>
+            <div class="completion-text">任务完成！</div>
         </body>
         </html>`;
     }

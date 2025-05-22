@@ -1,0 +1,33 @@
+{
+  "date": "2025-05-22",
+  "objective": "为插件设计一个高逼格的 theme",
+  "tasks": [
+    {
+      "content": "完成结束动画",
+      "weight": 20,
+      "completed": true
+    },
+    {
+      "content": "每个组件的名称修改",
+      "weight": 20,
+      "completed": true
+    },
+    {
+      "content": "主题颜色修改",
+      "weight": 20,
+      "completed": true
+    },
+    {
+      "content": "完成的md文件需要删除",
+      "weight": 20,
+      "completed": true
+    },
+    {
+      "content": "完成更新发布",
+      "weight": 20,
+      "completed": true
+    }
+  ],
+  "totalTime": "01:03:49",
+  "completedAt": "2025-05-22T17:10:20.184Z"
+}

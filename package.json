@@ -1,7 +1,7 @@
 {
     "name": "foyg",
     "displayName": "FOYG",
-    "version": "0.0.3",
+    "version": "0.0.4",
     "publisher": "cl-coraje",
     "description": "FOYG (Focus On Your Goal) - Help you stay focused on your current goal",
     "engines": {
@@ -59,7 +59,7 @@
             "foyg-sidebar": [
                 {
                     "id": "foyg-todo",
-                    "name": "Today's Goals",
+                    "name": "FOCUS ON YOUR GOAL!",
                     "type": "webview",
                     "when": "foyg:showTodoList"
                 }
